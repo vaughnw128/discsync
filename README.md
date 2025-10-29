@@ -13,7 +13,7 @@ When working with data from discord, I sometimes want to refresh things quickly 
 as well as have a much more quick-access location to query historical data. This is not 
 possible in Discord natively, especially given the lack of a search feature.
 
-# Overview
+## Overview
 - Enumerates all guilds the bot can access and upserts their metadata.
 - Enumerates message-bearing channels (Text, News, Threads, Forum) and upserts
   their metadata.
@@ -22,22 +22,24 @@ possible in Discord natively, especially given the lack of a search feature.
   JSON.
 - Repeats periodically to catch new messages and fill any gaps.
 
-# Quick start
+## Quick start
 
-1) Build
+### Build
 ```bash
 cargo build --release
 ```
 
-2) Set variables
+### Set variables
 
-Via environment variables:
 ```bash
 export DISCORD_TOKEN=my_bot_token
 export DATABASE_URL=my_postgres_url_or_sqlite_path (if this is missing, it will use a local sqlite path)
 ```
 
-Via CLI flags:
+### Run
+
+Variables can also be passed in as flags.
+
 ```bash
 # Postgres
 target/release/discsync \
@@ -49,20 +51,20 @@ target/release/discsync \
   --discord-token my_discord_token
 ```
 
-# Technical Details
+## Technical Details
 
-# Schema overview
+### Schema overview
 - Tables: `guilds`, `channels`, `users`, `messages`.
 - Each table also stores the full raw Discord JSON in `raw_json` for fidelity.
 - `messages` includes nested JSON columns for mentions, attachments, embeds,
   components, reactions, and message_reference. `created_at_ms` is derived from
   the Discord snowflake for stable sorting.
 
-## Notes
+### Notes
 - Message Content intent must be enabled for your bot in the Discord Developer Portal.
 - Ensure the bot has View Channels and Read Message History permissions.
 - `.env` is not auto-loaded in Windows; set env vars explicitly or pass flags.
 
-## Troubleshooting
+### Troubleshooting
 - No messages stored: check bot permissions and that Message Content intent is enabled.
 - SQLite lock issues on Windows: close readers and try again; WAL is not explicitly enabled.
