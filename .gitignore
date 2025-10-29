@@ -1,0 +1,16 @@
+# Rust build
+/target/
+
+# IDE
+.vscode/
+.idea/
+
+# Local data
+messages.sqlite
+messages.sqlite*
+model/
+
+# Environment files (secrets)
+.env
+.env.*
+
