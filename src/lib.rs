@@ -1,4 +1,5 @@
 pub mod db;
-pub mod embedder;
-pub mod pipeline;
+pub mod archiver;
+pub mod entity;
+
 pub use db::init_db;
