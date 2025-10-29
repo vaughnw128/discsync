@@ -33,7 +33,7 @@ cargo build --release
 
 ```bash
 export DISCORD_TOKEN=my_bot_token
-export DATABASE_URL=my_postgres_url_or_sqlite_path (if this is missing, it will use a local sqlite path)
+export DATABASE_URL=my_postgres_url_or_sqlite_path # (if this is missing, it will use a local sqlite path)
 ```
 
 ### Run
