@@ -1,12 +1,12 @@
 // external
 use anyhow::{Context, Result};
-use serenity::http::{GuildPagination, Http};
-use serenity::all::{ChannelType, Message, MessagePagination};
-use serenity::model::id::{ChannelId, GuildId, MessageId};
 use sea_orm::{Database, DatabaseConnection};
 use serde_json::Value as JsonValue;
+use serenity::all::{ChannelType, Message, MessagePagination};
+use serenity::http::{GuildPagination, Http};
+use serenity::model::id::{ChannelId, GuildId, MessageId};
 use tokio::time::{sleep, Duration};
-use tracing::warn;
+use tracing::{info, warn};
 
 // project
 use crate::db;
@@ -46,7 +46,9 @@ impl Archiver {
     }
 
     async fn sync_all_guilds(&self) -> Result<()> {
+        info!("sync pass started");
         let mut after: Option<GuildId> = None;
+        let mut guilds_processed: usize = 0;
         loop {
             let page = self
                 .http
@@ -57,8 +59,10 @@ impl Archiver {
             }
             for g in &page {
                 let gid = g.id;
+                info!(guild=?gid.get(), "syncing guild");
                 let guild = self.http.get_guild(gid).await?;
-                let features_val: JsonValue = serde_json::to_value(&guild.features).unwrap_or(JsonValue::Array(vec![]));
+                let features_val: JsonValue =
+                    serde_json::to_value(&guild.features).unwrap_or(JsonValue::Array(vec![]));
                 let raw_guild: JsonValue = serde_json::to_value(&guild).unwrap_or(JsonValue::Null);
                 let icon_str = guild.icon.as_ref().map(|h| h.to_string());
                 db::upsert_guild(
@@ -73,16 +77,27 @@ impl Archiver {
                 .await?;
 
                 self.sync_guild_channels(gid).await?;
+                guilds_processed += 1;
             }
             after = page.last().map(|g| g.id);
         }
+        info!(guilds = guilds_processed, "sync pass finished");
+
         Ok(())
     }
 
     async fn sync_guild_channels(&self, guild_id: GuildId) -> Result<()> {
         let channels = self.http.get_channels(guild_id).await?; // guild channels
+        let total = channels.len();
+        let message_bearing = channels
+            .iter()
+            .filter(|ch| is_message_bearing_channel(&ch.kind))
+            .count();
+        info!(guild=?guild_id.get(), channels=total, message_bearing, "syncing guild channels");
         for ch in channels {
-            if !is_message_bearing_channel(&ch.kind) { continue; }
+            if !is_message_bearing_channel(&ch.kind) {
+                continue;
+            }
             let kind_str = format!("{:?}", ch.kind);
             let pos = Some(ch.position as i32);
             db::upsert_channel(
@@ -100,12 +115,14 @@ impl Archiver {
             .await?;
 
             // Full sweep to ensure completeness
-            self.sync_channel_full(ch.id).await?;
+            self.sync_channel_full(guild_id, ch.id).await?;
         }
         Ok(())
     }
 
-    async fn sync_channel_full(&self, channel_id: ChannelId) -> Result<()> {
+    async fn sync_channel_full(&self, guild_id: GuildId, channel_id: ChannelId) -> Result<()> {
+        let mut total_processed: usize = 0;
+        let mut batches: usize = 0;
         // Backfill older than current min
         loop {
             let min_id = db::min_message_id_in_channel(&self.db, channel_id.get() as i64)
@@ -114,14 +131,18 @@ impl Archiver {
             let batch = if let Some(mid) = min_id {
                 self.fetch_messages_before(channel_id, mid, 100).await?
             } else {
-                // Channel not in DB yet: start from newest page
-                self.fetch_messages_before(channel_id, MessageId::new(u64::MAX), 100)
-                    .await?
+                // Channel not in DB yet: start from newest page without a cursor
+                self.fetch_messages_latest(channel_id, 100).await?
             };
             if batch.is_empty() {
                 break;
             }
-            self.persist_messages(channel_id, &batch).await?;
+            let n = self.persist_messages(guild_id, channel_id, &batch).await?;
+            total_processed += n;
+            batches += 1;
+            if batches % 10 == 0 {
+                info!(guild=?guild_id.get(), channel=?channel_id.get(), batches, messages=total_processed, "channel sync progress");
+            }
             if batch.len() < 100 {
                 break;
             }
@@ -137,7 +158,12 @@ impl Archiver {
             if batch.is_empty() {
                 break;
             }
-            self.persist_messages(channel_id, &batch).await?;
+            let n = self.persist_messages(guild_id, channel_id, &batch).await?;
+            total_processed += n;
+            batches += 1;
+            if batches % 10 == 0 {
+                info!(guild=?guild_id.get(), channel=?channel_id.get(), batches, messages=total_processed, "channel sync progress");
+            }
             if batch.len() < 100 {
                 break;
             }
@@ -148,13 +174,24 @@ impl Archiver {
         loop {
             let page = match before {
                 Some(mid) => self.fetch_messages_before(channel_id, mid, 100).await?,
-                None => self.fetch_messages_before(channel_id, MessageId::new(u64::MAX), 100).await?,
+                None => self.fetch_messages_latest(channel_id, 100).await?,
             };
-            if page.is_empty() { break; }
-            self.persist_messages(channel_id, &page).await?;
+            if page.is_empty() {
+                break;
+            }
+            let n = self.persist_messages(guild_id, channel_id, &page).await?;
+            total_processed += n;
+            batches += 1;
+            if batches % 10 == 0 {
+                info!(guild=?guild_id.get(), channel=?channel_id.get(), batches, messages=total_processed, "channel sync progress");
+            }
             before = page.last().map(|m| m.id);
-            if page.len() < 100 { break; }
+            if page.len() < 100 {
+                break;
+            }
         }
+
+        info!(guild=?guild_id.get(), channel=?channel_id.get(), batches, messages=total_processed, "channel sync complete");
 
         Ok(())
     }
@@ -167,7 +204,11 @@ impl Archiver {
     ) -> Result<Vec<Message>> {
         let msgs = self
             .http
-            .get_messages(channel_id, Some(MessagePagination::Before(before)), Some(limit as u8))
+            .get_messages(
+                channel_id,
+                Some(MessagePagination::Before(before)),
+                Some(limit as u8),
+            )
             .await
             .with_context(|| format!("fetch before failed for channel {}", channel_id))?;
         Ok(msgs)
@@ -181,13 +222,36 @@ impl Archiver {
     ) -> Result<Vec<Message>> {
         let msgs = self
             .http
-            .get_messages(channel_id, Some(MessagePagination::After(after)), Some(limit as u8))
+            .get_messages(
+                channel_id,
+                Some(MessagePagination::After(after)),
+                Some(limit as u8),
+            )
             .await
             .with_context(|| format!("fetch after failed for channel {}", channel_id))?;
         Ok(msgs)
     }
 
-    async fn persist_messages(&self, channel_id: ChannelId, msgs: &[Message]) -> Result<()> {
+    async fn fetch_messages_latest(
+        &self,
+        channel_id: ChannelId,
+        limit: u16,
+    ) -> Result<Vec<Message>> {
+        let msgs = self
+            .http
+            .get_messages(channel_id, None, Some(limit as u8))
+            .await
+            .with_context(|| format!("fetch latest failed for channel {}", channel_id))?;
+        Ok(msgs)
+    }
+
+    async fn persist_messages(
+        &self,
+        guild_id: GuildId,
+        channel_id: ChannelId,
+        msgs: &[Message],
+    ) -> Result<usize> {
+        let mut processed: usize = 0;
         for m in msgs {
             // Avoid bot/webhook messages
             if m.author.bot || m.webhook_id.is_some() {
@@ -218,12 +282,16 @@ impl Archiver {
             db::insert_message(
                 &self.db,
                 m.id.get() as i64,
-                m.guild_id.map(|gid| gid.get() as i64),
+                Some(guild_id.get() as i64),
                 channel_id.get() as i64,
                 m.author.id.get() as i64,
                 created_ms,
                 edited_ms,
-                if m.content.is_empty() { None } else { Some(m.content.as_str()) },
+                if m.content.is_empty() {
+                    None
+                } else {
+                    Some(m.content.as_str())
+                },
                 m.tts,
                 m.pinned,
                 &kind_str,
@@ -237,8 +305,9 @@ impl Archiver {
                 &serde_json::to_value(m).unwrap_or(JsonValue::Null),
             )
             .await?;
+            processed += 1;
         }
-        Ok(())
+        Ok(processed)
     }
 }
 
@@ -256,6 +325,6 @@ fn is_message_bearing_channel(kind: &ChannelType) -> bool {
 
 fn snowflake_ms(id: MessageId) -> i64 {
     let discord_epoch = 1420070400000i64; // 2015-01-01T00:00:00.000Z
-    
+
     ((id.get() >> 22) as i64) + discord_epoch
 }

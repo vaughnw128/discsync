@@ -1,12 +1,15 @@
 // external
 use anyhow::Result;
-use sea_orm::JsonValue;
 use sea_orm::sea_query::{Alias, Index, OnConflict};
-use sea_orm::{ConnectionTrait, DatabaseConnection};
+use sea_orm::JsonValue;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Schema, Set};
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 
 // project
-use crate::entity::{self, Channel as ChannelEntity, Guild as GuildEntity, Message as MessageEntity, User as UserEntity};
+use crate::entity::{
+    self, Channel as ChannelEntity, Guild as GuildEntity, Message as MessageEntity,
+    User as UserEntity,
+};
 
 pub async fn init_db(db: &DatabaseConnection) -> Result<()> {
     let backend = db.get_database_backend();

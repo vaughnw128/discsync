@@ -8,9 +8,8 @@
 # Local data
 messages.sqlite
 messages.sqlite*
-model/
 
-# Environment files (secrets)
+# Environment files
 .env
 .env.*
 
