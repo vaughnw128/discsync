@@ -234,7 +234,7 @@ impl Archiver {
                 &serde_json::to_value(&m.components).unwrap_or(JsonValue::Array(vec![])),
                 &serde_json::to_value(&m.reactions).unwrap_or(JsonValue::Array(vec![])),
                 &serde_json::to_value(&m.message_reference).unwrap_or(JsonValue::Null),
-                &serde_json::to_value(&m).unwrap_or(JsonValue::Null),
+                &serde_json::to_value(m).unwrap_or(JsonValue::Null),
             )
             .await?;
         }
@@ -255,7 +255,7 @@ fn is_message_bearing_channel(kind: &ChannelType) -> bool {
 }
 
 fn snowflake_ms(id: MessageId) -> i64 {
-    let discord_epoch = 1420070400000i64;
-    let timestamp = ((id.get() >> 22) as i64) + discord_epoch;
-    timestamp
+    let discord_epoch = 1420070400000i64; // 2015-01-01T00:00:00.000Z
+    
+    ((id.get() >> 22) as i64) + discord_epoch
 }
