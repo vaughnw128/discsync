@@ -1,4 +1,4 @@
-FROM rust:1.83
+FROM rust:1.90
 LABEL authors="vaughnw128"
 
 COPY . .
