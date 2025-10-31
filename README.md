@@ -1,5 +1,7 @@
 # discsync
 
+![logo.png](logo.png)
+
 A simple Discord archiver that mirrors guilds, channels, users, and messages
 into a SQL database (SQLite locally, Postgres in prod). It continuously polls
 and fills gaps to maintain a complete history. Bot and webhook messages are
