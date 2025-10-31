@@ -1,6 +1,7 @@
 // external
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use futures::stream::{self, StreamExt};
 use sea_orm::{Database, DatabaseConnection, Set};
 use serde_json::Value as JsonValue;
 use serenity::Client;
@@ -13,9 +14,9 @@ use tracing::{info, warn};
 
 // project
 use crate::db;
-use crate::entity; // for ActiveModel types
+use crate::entity;
 
-// Event handler for real-time gateway messages
+// Event handler for on_message
 struct GatewayHandler {
     db: DatabaseConnection,
 }
@@ -35,7 +36,7 @@ impl EventHandler for GatewayHandler {
 
 impl GatewayHandler {
     async fn persist_realtime_message(&self, m: Message) -> Result<()> {
-        // Upsert user first
+        // upsert user
         let u = &m.author;
         let discr_str = u.discriminator.map(|d| d.get().to_string());
         let avatar_str = u.avatar.as_ref().map(|h| h.to_string());
@@ -51,7 +52,7 @@ impl GatewayHandler {
         )
         .await?;
 
-        // Insert message (ignore duplicates at DB layer)
+        // upsert message
         let created_ms = snowflake_ms(m.id);
         let edited_ms = m.edited_timestamp.map(|t| t.unix_timestamp() * 1000);
         let kind_str = format!("{:?}", m.kind);
@@ -107,7 +108,7 @@ impl Archiver {
         let db = Database::connect(&cfg.database_url).await?;
         db::init_db(&db).await?;
 
-        // Start a background gateway client for real-time message intake
+        // gateway for on_message
         let intents = GatewayIntents::GUILDS
             | GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT;
@@ -163,7 +164,8 @@ impl Archiver {
                     let guild = self.http.get_guild(gid).await?;
                     let features_val: JsonValue =
                         serde_json::to_value(&guild.features).unwrap_or(JsonValue::Array(vec![]));
-                    let raw_guild: JsonValue = serde_json::to_value(&guild).unwrap_or(JsonValue::Null);
+                    let raw_guild: JsonValue =
+                        serde_json::to_value(&guild).unwrap_or(JsonValue::Null);
                     let icon_str = guild.icon.as_ref().map(|h| h.to_string());
                     db::upsert_guild(
                         &self.db,
@@ -196,21 +198,20 @@ impl Archiver {
     async fn sync_guild_channels(&self, guild_id: GuildId) -> Result<()> {
         let channels = self.http.get_channels(guild_id).await?; // guild channels
         let total = channels.len();
-        let message_bearing = channels
-            .iter()
+        let message_bearing: Vec<_> = channels
+            .into_iter()
             .filter(|ch| is_message_bearing_channel(&ch.kind))
-            .count();
-        info!(guild=?guild_id.get(), channels=total, message_bearing, "syncing guild channels");
-        for ch in channels {
-            if !is_message_bearing_channel(&ch.kind) {
-                continue;
-            }
+            .collect();
+        let mb_len = message_bearing.len();
+        info!(guild=?guild_id.get(), channels=total, message_bearing=mb_len, "syncing guild channels");
 
-            // Channel sync isolate pass
-            if let Err(err) = async {
+        // process multiple channels at once
+        const CHANNEL_CONCURRENCY: usize = 6;
+        stream::iter(message_bearing)
+            .map(|ch| async move {
                 let kind_str = format!("{:?}", ch.kind);
                 let pos = Some(ch.position as i32);
-                db::upsert_channel(
+                if let Err(err) = db::upsert_channel(
                     &self.db,
                     ch.id.get() as i64,
                     Some(guild_id.get() as i64),
@@ -222,17 +223,20 @@ impl Archiver {
                     pos,
                     &serde_json::to_value(&ch).unwrap_or(JsonValue::Null),
                 )
-                .await?;
+                .await
+                {
+                    warn!(guild=?guild_id.get(), channel=?ch.id.get(), error=?err, "channel upsert failed; continuing");
+                    return;
+                }
 
-                // Full sweep to ensure completeness
-                self.sync_channel_full(guild_id, ch.id).await
-            }
-            .await
-            {
-                warn!(guild=?guild_id.get(), channel=?ch.id.get(), error=?err, "channel sync failed; continuing");
-                continue;
-            }
-        }
+                if let Err(err) = self.sync_channel_full(guild_id, ch.id).await {
+                    warn!(guild=?guild_id.get(), channel=?ch.id.get(), error=?err, "channel sync failed; continuing");
+                }
+            })
+            .buffer_unordered(CHANNEL_CONCURRENCY)
+            .for_each(|_| async {})
+            .await;
+
         Ok(())
     }
 
@@ -285,7 +289,7 @@ impl Archiver {
             }
         }
 
-        // Interior gap sweep: walk downward once more and insert any missing messages
+        // Interior gap sweep
         let mut before = None;
         loop {
             let page = match before {
