@@ -1,15 +1,92 @@
 // external
 use anyhow::{Context, Result};
-use sea_orm::{Database, DatabaseConnection};
+use async_trait::async_trait;
+use sea_orm::{Database, DatabaseConnection, Set};
 use serde_json::Value as JsonValue;
-use serenity::all::{ChannelType, Message, MessagePagination};
+use serenity::Client;
+use serenity::all::{ChannelType, GatewayIntents, Message, MessagePagination};
 use serenity::http::{GuildPagination, Http};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
-use tokio::time::{sleep, Duration};
+use serenity::prelude::{Context as SerenityContext, EventHandler};
+use tokio::time::{Duration, sleep};
 use tracing::{info, warn};
 
 // project
 use crate::db;
+use crate::entity; // for ActiveModel types
+
+// Event handler for real-time gateway messages
+struct GatewayHandler {
+    db: DatabaseConnection,
+}
+
+#[async_trait]
+impl EventHandler for GatewayHandler {
+    async fn message(&self, _ctx: SerenityContext, m: Message) {
+        // Skip bot/webhook messages
+        if m.author.bot || m.webhook_id.is_some() {
+            return;
+        }
+        if let Err(err) = self.persist_realtime_message(m).await {
+            warn!(error=?err, "gateway message persist failed");
+        }
+    }
+}
+
+impl GatewayHandler {
+    async fn persist_realtime_message(&self, m: Message) -> Result<()> {
+        // Upsert user first
+        let u = &m.author;
+        let discr_str = u.discriminator.map(|d| d.get().to_string());
+        let avatar_str = u.avatar.as_ref().map(|h| h.to_string());
+        db::upsert_user(
+            &self.db,
+            u.id.get() as i64,
+            Some(u.name.as_str()),
+            u.global_name.as_deref(),
+            discr_str.as_deref(),
+            avatar_str.as_deref(),
+            u.bot,
+            &serde_json::to_value(u).unwrap_or(JsonValue::Null),
+        )
+        .await?;
+
+        // Insert message (ignore duplicates at DB layer)
+        let created_ms = snowflake_ms(m.id);
+        let edited_ms = m.edited_timestamp.map(|t| t.unix_timestamp() * 1000);
+        let kind_str = format!("{:?}", m.kind);
+        let guild_id_i64 = m.guild_id.map(|g| g.get() as i64);
+
+        db::insert_message(
+            &self.db,
+            m.id.get() as i64,
+            guild_id_i64,
+            m.channel_id.get() as i64,
+            m.author.id.get() as i64,
+            created_ms,
+            edited_ms,
+            if m.content.is_empty() {
+                None
+            } else {
+                Some(m.content.as_str())
+            },
+            m.tts,
+            m.pinned,
+            &kind_str,
+            m.flags.map(|f| f.bits() as i64),
+            &serde_json::to_value(&m.mentions).unwrap_or(JsonValue::Array(vec![])),
+            &serde_json::to_value(&m.attachments).unwrap_or(JsonValue::Array(vec![])),
+            &serde_json::to_value(&m.embeds).unwrap_or(JsonValue::Array(vec![])),
+            &serde_json::to_value(&m.components).unwrap_or(JsonValue::Array(vec![])),
+            &serde_json::to_value(&m.reactions).unwrap_or(JsonValue::Array(vec![])),
+            &serde_json::to_value(&m.message_reference).unwrap_or(JsonValue::Null),
+            &serde_json::to_value(&m).unwrap_or(JsonValue::Null),
+        )
+        .await?;
+
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ArchiverConfig {
@@ -29,6 +106,26 @@ impl Archiver {
         let http = Http::new(&cfg.discord_token);
         let db = Database::connect(&cfg.database_url).await?;
         db::init_db(&db).await?;
+
+        // Start a background gateway client for real-time message intake
+        let intents = GatewayIntents::GUILDS
+            | GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::MESSAGE_CONTENT;
+        let handler = GatewayHandler { db: db.clone() };
+        let token = cfg.discord_token.clone();
+        tokio::spawn(async move {
+            match Client::builder(token, intents).event_handler(handler).await {
+                Ok(mut client) => {
+                    if let Err(err) = client.start_autosharded().await {
+                        warn!(error=?err, "gateway client exited with error");
+                    }
+                }
+                Err(err) => {
+                    warn!(error=?err, "failed to construct gateway client");
+                }
+            }
+        });
+
         Ok(Self {
             http,
             db,
@@ -251,63 +348,84 @@ impl Archiver {
         channel_id: ChannelId,
         msgs: &[Message],
     ) -> Result<usize> {
-        let mut processed: usize = 0;
+        // Prepare batch models, skipping bot/webhook messages
+        let mut users_map: std::collections::BTreeMap<i64, entity::user::ActiveModel> =
+            std::collections::BTreeMap::new();
+        let mut message_models: Vec<entity::message::ActiveModel> = Vec::with_capacity(msgs.len());
+
         for m in msgs {
-            // Avoid bot/webhook messages
             if m.author.bot || m.webhook_id.is_some() {
                 continue;
             }
 
-            // Upsert author (non-bot only)
+            // User upsert model (dedup by id)
             let u = &m.author;
             let discr_str = u.discriminator.map(|d| d.get().to_string());
             let avatar_str = u.avatar.as_ref().map(|h| h.to_string());
-            db::upsert_user(
-                &self.db,
-                u.id.get() as i64,
-                Some(u.name.as_str()),
-                u.global_name.as_deref(),
-                discr_str.as_deref(),
-                avatar_str.as_deref(),
-                u.bot,
-                &serde_json::to_value(u).unwrap_or(JsonValue::Null),
-            )
-            .await?;
+            let user_model = entity::user::ActiveModel {
+                id: Set(u.id.get() as i64),
+                username: Set(u.name.clone().into()),
+                global_name: Set(u.global_name.clone()),
+                discriminator: Set(discr_str),
+                avatar: Set(avatar_str),
+                bot: Set(u.bot),
+                raw_json: Set(serde_json::to_value(u).unwrap_or(JsonValue::Null)),
+            };
+            users_map.insert(u.id.get() as i64, user_model);
 
+            // Message insert model
             let created_ms = snowflake_ms(m.id);
             let edited_ms = m.edited_timestamp.map(|t| t.unix_timestamp() * 1000);
-
             let kind_str = format!("{:?}", m.kind);
 
-            db::insert_message(
-                &self.db,
-                m.id.get() as i64,
-                Some(guild_id.get() as i64),
-                channel_id.get() as i64,
-                m.author.id.get() as i64,
-                created_ms,
-                edited_ms,
-                if m.content.is_empty() {
+            let msg_model = entity::message::ActiveModel {
+                id: Set(m.id.get() as i64),
+                guild_id: Set(Some(guild_id.get() as i64)),
+                channel_id: Set(channel_id.get() as i64),
+                author_id: Set(m.author.id.get() as i64),
+                created_at_ms: Set(created_ms),
+                edited_at_ms: Set(edited_ms),
+                content: Set(if m.content.is_empty() {
                     None
                 } else {
-                    Some(m.content.as_str())
-                },
-                m.tts,
-                m.pinned,
-                &kind_str,
-                m.flags.map(|f| f.bits() as i64),
-                &serde_json::to_value(&m.mentions).unwrap_or(JsonValue::Array(vec![])),
-                &serde_json::to_value(&m.attachments).unwrap_or(JsonValue::Array(vec![])),
-                &serde_json::to_value(&m.embeds).unwrap_or(JsonValue::Array(vec![])),
-                &serde_json::to_value(&m.components).unwrap_or(JsonValue::Array(vec![])),
-                &serde_json::to_value(&m.reactions).unwrap_or(JsonValue::Array(vec![])),
-                &serde_json::to_value(&m.message_reference).unwrap_or(JsonValue::Null),
-                &serde_json::to_value(m).unwrap_or(JsonValue::Null),
-            )
-            .await?;
-            processed += 1;
+                    Some(m.content.clone())
+                }),
+                tts: Set(m.tts),
+                pinned: Set(m.pinned),
+                kind: Set(Some(kind_str)),
+                flags: Set(m.flags.map(|f| f.bits() as i64)),
+                mentions: Set(Some(
+                    serde_json::to_value(&m.mentions).unwrap_or(JsonValue::Array(vec![])),
+                )),
+                attachments: Set(Some(
+                    serde_json::to_value(&m.attachments).unwrap_or(JsonValue::Array(vec![])),
+                )),
+                embeds: Set(Some(
+                    serde_json::to_value(&m.embeds).unwrap_or(JsonValue::Array(vec![])),
+                )),
+                components: Set(Some(
+                    serde_json::to_value(&m.components).unwrap_or(JsonValue::Array(vec![])),
+                )),
+                reactions: Set(Some(
+                    serde_json::to_value(&m.reactions).unwrap_or(JsonValue::Array(vec![])),
+                )),
+                message_reference: Set(Some(
+                    serde_json::to_value(&m.message_reference).unwrap_or(JsonValue::Null),
+                )),
+                raw_json: Set(serde_json::to_value(m).unwrap_or(JsonValue::Null)),
+            };
+            message_models.push(msg_model);
         }
-        Ok(processed)
+
+        // Execute batched writes
+        let users_vec = users_map.into_values().collect::<Vec<_>>();
+        db::upsert_users_batch(&self.db, users_vec).await?;
+        db::insert_messages_batch(&self.db, message_models).await?;
+
+        Ok(msgs
+            .iter()
+            .filter(|m| !m.author.bot && m.webhook_id.is_none())
+            .count())
     }
 }
 

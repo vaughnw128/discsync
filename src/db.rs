@@ -1,7 +1,7 @@
 // external
 use anyhow::Result;
-use sea_orm::sea_query::{Alias, Index, OnConflict};
 use sea_orm::JsonValue;
+use sea_orm::sea_query::{Alias, Index, OnConflict};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Schema, Set};
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 
@@ -172,6 +172,49 @@ pub async fn upsert_user(
                     entity::user::Column::Bot,
                     entity::user::Column::RawJson,
                 ])
+                .to_owned(),
+        )
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+pub async fn upsert_users_batch(
+    db: &DatabaseConnection,
+    users: Vec<entity::user::ActiveModel>,
+) -> Result<()> {
+    if users.is_empty() {
+        return Ok(());
+    }
+    UserEntity::insert_many(users)
+        .on_conflict(
+            OnConflict::column(entity::user::Column::Id)
+                .update_columns([
+                    entity::user::Column::Username,
+                    entity::user::Column::GlobalName,
+                    entity::user::Column::Discriminator,
+                    entity::user::Column::Avatar,
+                    entity::user::Column::Bot,
+                    entity::user::Column::RawJson,
+                ])
+                .to_owned(),
+        )
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_messages_batch(
+    db: &DatabaseConnection,
+    messages: Vec<entity::message::ActiveModel>,
+) -> Result<()> {
+    if messages.is_empty() {
+        return Ok(());
+    }
+    MessageEntity::insert_many(messages)
+        .on_conflict(
+            OnConflict::column(entity::message::Column::Id)
+                .do_nothing()
                 .to_owned(),
         )
         .exec(db)

@@ -13,3 +13,4 @@ dotenvy = "0.15"
 tokio = { version = "1", features = ["full"] }
 sea-orm = { version = "1.1.17", features = ["macros", "sqlx-postgres", "sqlx-sqlite", "runtime-tokio-rustls"] }
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "http", "cache"] }
+async-trait = "0.1"

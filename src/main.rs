@@ -23,7 +23,7 @@ pub struct Args {
 
     /// Poll interval seconds between sync passes
     #[arg(long, env = "POLL_INTERVAL_SECS", default_value_t = 300)]
-    pub poll_interval_secs: u64
+    pub poll_interval_secs: u64,
 }
 
 fn ensure_sqlite_file(path: &Path) -> Result<()> {

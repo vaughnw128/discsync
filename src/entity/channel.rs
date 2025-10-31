@@ -1,6 +1,6 @@
 // external
-use sea_orm::entity::prelude::*;
 use sea_orm::JsonValue;
+use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "channels")]
