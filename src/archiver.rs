@@ -157,23 +157,33 @@ impl Archiver {
             for g in &page {
                 let gid = g.id;
                 info!(guild=?gid.get(), "syncing guild");
-                let guild = self.http.get_guild(gid).await?;
-                let features_val: JsonValue =
-                    serde_json::to_value(&guild.features).unwrap_or(JsonValue::Array(vec![]));
-                let raw_guild: JsonValue = serde_json::to_value(&guild).unwrap_or(JsonValue::Null);
-                let icon_str = guild.icon.as_ref().map(|h| h.to_string());
-                db::upsert_guild(
-                    &self.db,
-                    gid.get() as i64,
-                    Some(guild.name.as_str()),
-                    Some(guild.owner_id.get() as i64),
-                    icon_str.as_deref(),
-                    &features_val,
-                    &raw_guild,
-                )
-                .await?;
 
-                self.sync_guild_channels(gid).await?;
+                // Guild isolate async pass
+                if let Err(err) = async {
+                    let guild = self.http.get_guild(gid).await?;
+                    let features_val: JsonValue =
+                        serde_json::to_value(&guild.features).unwrap_or(JsonValue::Array(vec![]));
+                    let raw_guild: JsonValue = serde_json::to_value(&guild).unwrap_or(JsonValue::Null);
+                    let icon_str = guild.icon.as_ref().map(|h| h.to_string());
+                    db::upsert_guild(
+                        &self.db,
+                        gid.get() as i64,
+                        Some(guild.name.as_str()),
+                        Some(guild.owner_id.get() as i64),
+                        icon_str.as_deref(),
+                        &features_val,
+                        &raw_guild,
+                    )
+                    .await?;
+
+                    self.sync_guild_channels(gid).await
+                }
+                .await
+                {
+                    warn!(guild=?gid.get(), error=?err, "guild sync failed; continuing");
+                    continue;
+                }
+
                 guilds_processed += 1;
             }
             after = page.last().map(|g| g.id);
@@ -195,24 +205,33 @@ impl Archiver {
             if !is_message_bearing_channel(&ch.kind) {
                 continue;
             }
-            let kind_str = format!("{:?}", ch.kind);
-            let pos = Some(ch.position as i32);
-            db::upsert_channel(
-                &self.db,
-                ch.id.get() as i64,
-                Some(guild_id.get() as i64),
-                Some(ch.name.as_str()),
-                &kind_str,
-                ch.topic.as_deref(),
-                ch.nsfw,
-                ch.parent_id.map(|id| id.get() as i64),
-                pos,
-                &serde_json::to_value(&ch).unwrap_or(JsonValue::Null),
-            )
-            .await?;
 
-            // Full sweep to ensure completeness
-            self.sync_channel_full(guild_id, ch.id).await?;
+            // Channel sync isolate pass
+            if let Err(err) = async {
+                let kind_str = format!("{:?}", ch.kind);
+                let pos = Some(ch.position as i32);
+                db::upsert_channel(
+                    &self.db,
+                    ch.id.get() as i64,
+                    Some(guild_id.get() as i64),
+                    Some(ch.name.as_str()),
+                    &kind_str,
+                    ch.topic.as_deref(),
+                    ch.nsfw,
+                    ch.parent_id.map(|id| id.get() as i64),
+                    pos,
+                    &serde_json::to_value(&ch).unwrap_or(JsonValue::Null),
+                )
+                .await?;
+
+                // Full sweep to ensure completeness
+                self.sync_channel_full(guild_id, ch.id).await
+            }
+            .await
+            {
+                warn!(guild=?guild_id.get(), channel=?ch.id.get(), error=?err, "channel sync failed; continuing");
+                continue;
+            }
         }
         Ok(())
     }
