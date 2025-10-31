@@ -51,7 +51,7 @@ spec:
               psql "$BASE_URI/postgres" -v ON_ERROR_STOP=1 -c "GRANT CONNECT, TEMPORARY ON DATABASE \"$DB_NAME\" TO \"$DB_APP_USER\"";
 
               psql "$BASE_URI/$DB_NAME" -v ON_ERROR_STOP=1 -c "\
-                GRANT USAGE ON SCHEMA public TO \"$DB_APP_USER\"; \
+                GRANT USAGE, CREATE ON SCHEMA public TO \"$DB_APP_USER\"; \
                 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"$DB_APP_USER\"; \
                 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO \"$DB_APP_USER\"; \
                 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"$DB_APP_USER\"; \
@@ -84,6 +84,15 @@ spec:
             secretKeyRef:
               name: {{ .Values.db.cluster }}-app
               key: password
+        - name: DB_HOST
+          value: {{ printf "%s-rw.%s.svc.cluster.local" .Values.db.cluster .Release.Namespace | quote }}
+        - name: DB_NAME
+          value: {{ .Values.db.name | quote }}
+        {{- $env := default (dict) .Values.envVars }}
+        {{- if not (hasKey $env "DATABASE_URL") }}
+        - name: DATABASE_URL
+          value: postgresql://$(DB_USERNAME):$(DB_PASSWORD)@$(DB_HOST):5432/$(DB_NAME)
+        {{- end }}
         {{- end }}
         {{- range $var, $value := .Values.envVars }}
         - name: {{ $var }}
