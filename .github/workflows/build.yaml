@@ -85,7 +85,7 @@ jobs:
       - name: "Upload Binaries"
         uses: "taiki-e/upload-rust-binary-action@v1"
         with:
-          bin: "mc-status-rs"
+          bin: "discsync"
           target: ${{ matrix.target }}
           archive: $bin-${{ matrix.target }}
           ref: refs/tags/v${{ needs.build.outputs.new_version }}
