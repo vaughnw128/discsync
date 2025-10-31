@@ -1,5 +1,4 @@
 image: "ghcr.io/vaughnw128/discsync"
-size: medium
 secretVars:
   DISCORD_TOKEN: "discsync-discord-token/credential"
 
@@ -13,3 +12,11 @@ db:
 
   migrator:
     secretName: "pg-migrator"
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 250m
+  limits:
+    memory: 2048Mi
+    cpu: 1024m
