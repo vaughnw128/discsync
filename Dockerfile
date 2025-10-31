@@ -5,4 +5,4 @@ COPY . .
 
 RUN cargo build --release
 
-CMD ["./target/release/mc-status-rs"]
+CMD ["./target/release/discsync"]
