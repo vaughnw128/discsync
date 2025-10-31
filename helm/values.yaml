@@ -2,3 +2,14 @@ image: "ghcr.io/vaughnw128/discsync"
 size: small
 secretVars:
   DISCORD_TOKEN: "discsync-discord-token/credential"
+
+envVars:
+  DATABASE_URL: "postgresql://$(DB_USERNAME):$(DB_PASSWORD)@grove-cluster-rw.applications.svc.cluster.local:5432/golden-path"
+
+db:
+  enabled: true
+  name: "sbux-oracle"
+  cluster: "grove-cluster"
+
+  migrator:
+    secretName: "pg-migrator"

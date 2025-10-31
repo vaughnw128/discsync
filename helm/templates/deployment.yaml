@@ -13,6 +13,47 @@ spec:
       labels:
         app: {{ lower .Chart.Name }}
     spec:
+      {{- if .Values.db.enabled }}
+      initContainers:
+        - name: app-db-permissions
+          image: ghcr.io/cloudnative-pg/postgresql:16
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_SUPERUSER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-superuser" .Values.db.cluster) .Values.db.superuserSecretName }}
+                  key: username
+            - name: DB_SUPERUSER_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-superuser" .Values.db.cluster) .Values.db.superuserSecretName }}
+                  key: password
+            - name: DB_APP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-app" .Values.db.cluster) .Values.db.appSecretName }}
+                  key: username
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              RW_HOST="{{ .Values.db.cluster }}-rw.{{ .Release.Namespace }}.svc.cluster.local"
+              DB_NAME="{{ .Values.db.name }}"
+              BASE_URI="postgresql://$DB_SUPERUSER_USER:$DB_SUPERUSER_PASS@$RW_HOST:5432"
+
+              echo "[app-setup] Granting application role privileges on '$DB_NAME'"
+              psql "$BASE_URI/postgres" -v ON_ERROR_STOP=1 -c "GRANT CONNECT, TEMPORARY ON DATABASE \"$DB_NAME\" TO \"$DB_APP_USER\"";
+
+              psql "$BASE_URI/$DB_NAME" -v ON_ERROR_STOP=1 -c "\
+                GRANT USAGE ON SCHEMA public TO \"$DB_APP_USER\"; \
+                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"$DB_APP_USER\"; \
+                GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO \"$DB_APP_USER\"; \
+                ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"$DB_APP_USER\"; \
+                ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO \"$DB_APP_USER\";\
+              "
+      {{- end }}
       containers:
       - name: {{ lower .Chart.Name }}
         image: {{ .Values.image }}:{{ .Chart.AppVersion }} # This is auto updated by the release mechanism
@@ -28,6 +69,18 @@ spec:
               name: {{ $.Chart.Name }}-secrets
               key: {{ $secret }}
         {{- end}}
+        {{- if .Values.db.enabled }}
+        - name: DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.db.cluster }}-app
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.db.cluster }}-app
+              key: password
+        {{- end }}
         {{- range $var, $value := .Values.envVars }}
         - name: {{ $var }}
           value: {{ quote $value }}
