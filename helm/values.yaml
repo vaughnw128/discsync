@@ -1,5 +1,5 @@
 image: "ghcr.io/vaughnw128/discsync"
-size: small
+size: medium
 secretVars:
   DISCORD_TOKEN: "discsync-discord-token/credential"
 

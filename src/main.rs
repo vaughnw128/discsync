@@ -23,11 +23,7 @@ pub struct Args {
 
     /// Poll interval seconds between sync passes
     #[arg(long, env = "POLL_INTERVAL_SECS", default_value_t = 300)]
-    pub poll_interval_secs: u64,
-
-    /// SQLx slow statement log threshold in seconds (e.g. 5 -> "5s").
-    #[arg(long, env = "SQLX_LOG_SLOW_STATEMENTS_SECS", default_value_t = 5)]
-    pub sqlx_log_slow_statements_secs: u64,
+    pub poll_interval_secs: u64
 }
 
 fn ensure_sqlite_file(path: &Path) -> Result<()> {
@@ -44,8 +40,6 @@ fn ensure_sqlite_file(path: &Path) -> Result<()> {
 
 impl Args {
     pub fn resolve(self) -> Result<ArchiverConfig> {
-        std::env::set_var("SQLX_LOG_SLOW_STATEMENTS", format!("{}s", self.sqlx_log_slow_statements_secs));
-
         let database_url = self.database_url.unwrap_or_else(|| {
             let default_path = PathBuf::from("messages.sqlite");
             ensure_sqlite_file(&default_path).unwrap();

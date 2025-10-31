@@ -1,45 +1,61 @@
-{{- define "synkronized.pod.resources" }}
-
-{{- if eq .Values.size "micro" -}}
-resources:
-  requests:
-    memory: "64Mi"
-    cpu: "100m"
-  limits:
-    memory: "512Mi"
-    cpu: "250m"
-{{- else if eq .Values.size "small" -}}
-resources:
-  requests:
-    memory: "128Mi"
-    cpu: "250m"
-  limits:
-    memory: "1024Mi"
-    cpu: "500m"
-{{- else if eq .Values.size "medium" -}}
-resources:
-  requests:
-    memory: "256Mi"
-    cpu: "500m"
-  limits:
-    memory: "2048Mi"
-    cpu: "1"
-{{- else if eq .Values.size "large" -}}
-resources:
-  requests:
-    memory: "512Mi"
-    cpu: "1"
-  limits:
-    memory: "4096Mi"
-    cpu: "2"
-{{- else -}}
-resources:
-  requests:
-    memory: "128Mi"
-    cpu: "250m"
-  limits:
-    memory: "1024Mi"
-    cpu: "500m"
+{{/*
+Expand the name of the chart.
+*/}}
+{{- define "discsync.name" -}}
+discsync
 {{- end }}
 
+{{/*
+Create a default fully qualified app name.
+We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
+If release name contains chart name it will be used as a full name.
+*/}}
+{{- define "discsync.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create chart name and version as used by the chart label.
+*/}}
+{{- define "discsync.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Common labels
+*/}}
+{{- define "discsync.labels" -}}
+helm.sh/chart: {{ include "discsync.chart" . }}
+{{ include "discsync.selectorLabels" . }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
+Selector labels
+*/}}
+{{- define "discsync.selectorLabels" -}}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Create the name of the service account to use
+*/}}
+{{- define "discsync.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "discsync.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
 {{- end }}

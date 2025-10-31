@@ -2,16 +2,20 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ lower .Chart.Name }}
+  labels:
+    {{- include "discsync.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicas | default 1 }}
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit | default 1 }}
   selector:
     matchLabels:
-      app: {{ lower .Chart.Name }}
+      {{- include "discsync.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: {{ include "discsync.name" . }}
   template:
     metadata:
       labels:
-        app: {{ lower .Chart.Name }}
+        {{- include "discsync.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ include "discsync.name" . }}
     spec:
       {{- if .Values.db.enabled }}
       initContainers:
@@ -86,6 +90,8 @@ spec:
           value: {{ quote $value }}
         {{ end -}}
         {{ end -}}
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
         {{- if .Values.volumeMounts -}}
         volumeMounts:
         {{- range $volume := .Values.volumeMounts }}
