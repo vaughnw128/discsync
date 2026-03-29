@@ -97,7 +97,7 @@ pub async fn upsert_guild(
     Ok(())
 }
 
-# [allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_channel(
     db: &DatabaseConnection,
     id: i64,
@@ -142,7 +142,7 @@ pub async fn upsert_channel(
     Ok(())
 }
 
-# [allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_user(
     db: &DatabaseConnection,
     id: i64,
@@ -224,7 +224,7 @@ pub async fn insert_messages_batch(
     Ok(())
 }
 
-# [allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub async fn insert_message(
     db: &DatabaseConnection,
     id: i64,
