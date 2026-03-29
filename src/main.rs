@@ -28,9 +28,11 @@ pub struct Args {
 
 fn ensure_sqlite_file(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent)?;
-        }
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
     if !path.exists() {
         std::fs::File::create(path)?;
     }
