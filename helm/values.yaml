@@ -5,6 +5,7 @@ single-container:
   containerPort: 8080
   gateway:
     enabled: false
+    hostname: ""
   db:
     enabled: true
     secretName: "sbux-oracle-pg-app"

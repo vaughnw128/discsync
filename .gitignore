@@ -13,3 +13,6 @@ messages.sqlite*
 .env
 .env.*
 
+# helm
+helm/Chart.lock
+helm/charts
