@@ -1,0 +1,4 @@
+skip-check:
+  - CKV_DOCKER_7  # Chainguard images use rolling tags by design
+  - CKV_DOCKER_2  # Health checks handled by Kubernetes probes
+  - CKV_DOCKER_3  # Chainguard runtime images run as nonroot by default

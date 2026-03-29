@@ -260,7 +260,7 @@ impl Archiver {
             let n = self.persist_messages(guild_id, channel_id, &batch).await?;
             total_processed += n;
             batches += 1;
-            if batches % 10 == 0 {
+            if batches.is_multiple_of(10) {
                 info!(guild=?guild_id.get(), channel=?channel_id.get(), batches, messages=total_processed, "channel sync progress");
             }
             if batch.len() < 100 {
@@ -281,7 +281,7 @@ impl Archiver {
             let n = self.persist_messages(guild_id, channel_id, &batch).await?;
             total_processed += n;
             batches += 1;
-            if batches % 10 == 0 {
+            if batches.is_multiple_of(10) {
                 info!(guild=?guild_id.get(), channel=?channel_id.get(), batches, messages=total_processed, "channel sync progress");
             }
             if batch.len() < 100 {
@@ -302,7 +302,7 @@ impl Archiver {
             let n = self.persist_messages(guild_id, channel_id, &page).await?;
             total_processed += n;
             batches += 1;
-            if batches % 10 == 0 {
+            if batches.is_multiple_of(10) {
                 info!(guild=?guild_id.get(), channel=?channel_id.get(), batches, messages=total_processed, "channel sync progress");
             }
             before = page.last().map(|m| m.id);
