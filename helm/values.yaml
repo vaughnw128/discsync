@@ -1,22 +1,20 @@
-image: "ghcr.io/vaughnw128/discsync"
-secretVars:
-  DISCORD_TOKEN: "discsync-discord-token/credential"
-
-envVars:
-  DATABASE_URL: "postgresql://$(DB_USERNAME):$(DB_PASSWORD)@grove-cluster-rw.applications.svc.cluster.local:5432/sbux-oracle"
-
-db:
-  enabled: true
-  name: "sbux-oracle"
-  cluster: "grove-cluster"
-
-  migrator:
-    secretName: "pg-migrator"
-
-resources:
-  requests:
-    memory: 256Mi
-    cpu: 250m
-  limits:
-    memory: 2048Mi
-    cpu: 1024m
+single-container:
+  name: "discsync"
+  image: "ghcr.io/vaughnw128/discsync"
+  imageTag: "0.3.0"
+  containerPort: 8080
+  gateway:
+    enabled: false
+  db:
+    enabled: true
+    secretName: "sbux-oracle-pg-app"
+    uriKey: "uri-pooler-rw"
+  secretVars:
+    DISCORD_TOKEN: "discsync-discord-token/credential"
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 2048Mi
+      cpu: 1024m
