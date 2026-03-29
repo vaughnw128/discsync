@@ -1,5 +1,5 @@
 # Rust multi-stage Dockerfile
-FROM rust:1.86 AS builder
+FROM rust:1.94 AS builder
 
 WORKDIR /build
 
