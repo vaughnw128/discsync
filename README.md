@@ -13,7 +13,7 @@ I built this solely to fit some fun use cases for my friends and I. Namely,
 I'm working on a tool that transforms group sentiment to an active stock ticker.
 When working with data from discord, I sometimes want to refresh things quickly for testing,
 as well as have a much more quick-access location to query historical data. This is not 
-possible in Discord natively, especially given the lack of a search feature.
+possible in Discord natively, especially given the lack of a search feature. 
 
 ## Overview
 - Enumerates all guilds the bot can access and upserts their metadata.
