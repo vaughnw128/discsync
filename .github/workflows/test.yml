@@ -15,4 +15,5 @@ jobs:
     uses: vaughnw128/hakoniwa/.github/workflows/test.yml@main
     with:
       language: rust
+      binary-name: discsync
       helm-path: ./helm
