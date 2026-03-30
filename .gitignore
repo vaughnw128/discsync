@@ -16,3 +16,6 @@ messages.sqlite*
 # helm
 helm/Chart.lock
 helm/charts
+
+# CI build artifacts
+/dist/
