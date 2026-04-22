@@ -28,7 +28,7 @@ jobs:
 
   preview:
     needs: prepare
-    if: ${{ needs.prepare.outputs.should-run == 'true' }}
+    if: ${{ needs.prepare.outputs.should_run == 'true' }}
     uses: vaughnw128/hakoniwa/.github/workflows/pr-preview.yml@main
     with:
       pr-number: ${{ needs.prepare.outputs.pr_number }}
