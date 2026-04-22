@@ -10,44 +10,23 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
-  packages: write
   pull-requests: read
 
 jobs:
   prepare:
-    if: >
-      github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, 'euclid build') &&
-      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    runs-on: ubuntu-latest
-    outputs:
-      head_sha: ${{ steps.pr.outputs.head_sha }}
-      pr_number: ${{ steps.pr.outputs.pr_number }}
-    steps:
-      - name: Load PR metadata
-        id: pr
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const prNumber = context.payload.issue.number;
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: prNumber,
-            });
-
-            if (pr.head.repo.full_name !== `${owner}/${repo}`) {
-              core.setFailed("Preview builds only support PRs from branches in this repository.");
-              return;
-            }
-
-            core.setOutput("head_sha", pr.head.sha);
-            core.setOutput("pr_number", `${prNumber}`);
+    if: ${{ github.event.issue.pull_request }}
+    uses: vaughnw128/hakoniwa/.github/workflows/pr-comment-prepare.yml@main
+    with:
+      issue-number: ${{ github.event.issue.number }}
+      comment-body: ${{ github.event.comment.body || '' }}
+      comment-author-association: ${{ github.event.comment.author_association || '' }}
+      command-prefix: euclid build
+      allow-forks: false
+    secrets: inherit
 
   preview:
     needs: prepare
+    if: ${{ needs.prepare.outputs.should-run == 'true' }}
     uses: vaughnw128/hakoniwa/.github/workflows/pr-preview.yml@main
     with:
       pr-number: ${{ needs.prepare.outputs.pr_number }}
