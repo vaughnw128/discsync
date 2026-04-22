@@ -12,7 +12,7 @@ permissions:
   contents: read
   issues: write
   packages: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   prepare:
