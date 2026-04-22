@@ -1,0 +1,63 @@
+name: PR Preview Build
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: pr-preview-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  packages: write
+  pull-requests: read
+
+jobs:
+  prepare:
+    if: >
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, 'euclid build') &&
+      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+    steps:
+      - name: Load PR metadata
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.issue.number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            if (pr.head.repo.full_name !== `${owner}/${repo}`) {
+              core.setFailed("Preview builds only support PRs from branches in this repository.");
+              return;
+            }
+
+            core.setOutput("head_sha", pr.head.sha);
+            core.setOutput("pr_number", `${prNumber}`);
+
+  preview:
+    needs: prepare
+    uses: vaughnw128/hakoniwa/.github/workflows/pr-preview.yml@main
+    with:
+      pr-number: ${{ needs.prepare.outputs.pr_number }}
+      head-sha: ${{ needs.prepare.outputs.head_sha }}
+      language: rust
+      binary-name: discsync
+      dockerfile: ./Dockerfile
+      build-context: .
+      helm-path: ./helm
+      chart-name: discsync
+      helm-image-repository-key: single-container.image
+      helm-image-tag-key: single-container.imageTag
+    secrets: inherit

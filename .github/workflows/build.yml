@@ -1,11 +1,14 @@
 name: Build and Release
 
 on:
-  workflow_run:
-    workflows: ["Code Quality & Tests"]
-    types: [completed]
+  push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -17,7 +20,7 @@ permissions:
 
 jobs:
   build:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[no ci]') }}
     uses: vaughnw128/hakoniwa/.github/workflows/build-and-release-rust.yml@main
     with:
       binary-name: discsync
