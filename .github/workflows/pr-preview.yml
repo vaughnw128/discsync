@@ -5,7 +5,7 @@ on:
     types: [created]
 
 concurrency:
-  group: pr-preview-${{ github.event.issue.number }}
+  group: ${{ startsWith(github.event.comment.body || '', 'euclid build') && format('pr-preview-{0}', github.event.issue.number) || format('issue-comment-{0}-{1}', github.event.issue.number, github.run_id) }}
   cancel-in-progress: true
 
 permissions:
