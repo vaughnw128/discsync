@@ -2,8 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -15,24 +14,15 @@ permissions:
   packages: write
   id-token: write
   attestations: write
-  actions: read
   security-events: write
+  actions: read
 
 jobs:
-  build:
+  release:
     if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[no ci]') }}
-    uses: vaughnw128/hakoniwa/.github/workflows/build-and-release-rust.yml@main
+    uses: vaughnw128/hakoniwa/.github/workflows/release.yml@main
     with:
-      binary-name: discsync
-    secrets: inherit
-
-  bump:
-    needs: build
-    if: ${{ needs.build.outputs.new_version != '' }}
-    uses: vaughnw128/hakoniwa/.github/workflows/bump.yml@main
-    with:
-      new_version: ${{ needs.build.outputs.new_version }}
       language: rust
+      binary-name: discsync
       helm-path: ./helm
-      push-helm-oci: true
     secrets: inherit
