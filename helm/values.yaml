@@ -1,7 +1,7 @@
 single-container:
   name: "discsync"
   image: "ghcr.io/vaughnw128/discsync"
-  imageTag: "1.2.4"
+  imageTag: "1.2.9"
   containerPort: 8080
   db:
     enabled: true
