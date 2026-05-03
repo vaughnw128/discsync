@@ -5,7 +5,7 @@ single-container:
   containerPort: 8080
   db:
     enabled: true
-    secretName: "sbux-oracle-pg-app"
+    secretName: "discsync-pg-app"
     uriKey: "uri-pooler-rw"
   secretVars:
     DISCORD_TOKEN: "discsync-discord-token/credential"
