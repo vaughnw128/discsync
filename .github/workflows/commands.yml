@@ -16,7 +16,7 @@ jobs:
     permissions:
       contents: read
       actions: write
-      pull-requests: read
+      pull-requests: write
       issues: write
     uses: vaughnw128/hakoniwa/.github/workflows/pr-build-command.yml@main
     with:
